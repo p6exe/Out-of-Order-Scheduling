@@ -28,8 +28,11 @@ class Instruction:
         self.reg2 = reg2
         self.reg3 = reg3
         self.cycles = []
+        self.reads = []
+        self.write = reg1
 
-
+def get_renamed_register(reg):
+    return
 def init_numreg_issuewidth():
     global num_registers, issue_width
 
@@ -112,9 +115,35 @@ def rename():
     new_list = []
 
     for instruct in rename_buffer:
-        #checks if are available and renames else stall
+        #checks if are available and renames, else stall
         if(free_registers - len(used_register_buffer) > 0):
-            used_register_buffer.append(instruct)
+            
+            if(instruct.type == "R"):
+                if(instruct in used_register_buffer):
+                    instruct.reads += [32 + used_register_buffer.index(instruct)]
+                if(instruct in used_register_buffer):
+                    instruct.reads += [32 + used_register_buffer.index(instruct)]
+                used_register_buffer.append(instruct)
+                instruct.write = 32 + used_register_buffer.index(instruct)
+
+            elif(instruct.type == "I"):
+                if(instruct in used_register_buffer):
+                    instruct.reads += [32 + used_register_buffer.index(instruct)]
+                used_register_buffer.append(instruct)
+                instruct.write = 32 + used_register_buffer.index(instruct)
+
+            elif(instruct.type == "L"):
+                if(instruct in used_register_buffer):
+                    instruct.reads += [32 + used_register_buffer.index(instruct)]
+                used_register_buffer.append(instruct)
+                instruct.write = 32 + used_register_buffer.index(instruct)
+
+            elif(instruct.type == "S"):
+                if(instruct in used_register_buffer):
+                    instruct.reads += [32 + used_register_buffer.index(instruct)]
+                if(instruct in used_register_buffer):
+                    instruct.reads += [32 + used_register_buffer.index(instruct)]
+
             instruct.cycles += [current_cycle]
             dispatch_buffer.append(instruct)
         else:
@@ -140,43 +169,55 @@ def issue():
     count = 0
     for instruct in issue_buffer:
         if (count < issue_width):
-            if(instruct.type == "R"):
+
+            #check if all read register dependencies are met
+            if(set(instruct.reads).issubset(set(write_buffer))):
+                instruct.cycles += [current_cycle]
+                writeback_buffer.append(instruct)
+                count += 1
+            else:
+                new_list += [instruct]
+            """if(instruct.type == "R"):
                 if(instruct.reg2 not in write_buffer and instruct.reg3 not in write_buffer):
                     instruct.cycles += [current_cycle]
                     writeback_buffer.append(instruct)
                     write_buffer += [instruct.reg1]
+                    count += 1
                 else:
                     new_list += [instruct] 
-                    count += 1
+                    
             if(instruct.type == "I"):
                 if(instruct.reg2 not in write_buffer):
                     instruct.cycles += [current_cycle]
                     writeback_buffer.append(instruct)
                     write_buffer += [instruct.reg1]
+                    count += 1
                 else:
                     new_list += [instruct] 
-                    count += 1
+                    
             if(instruct.type == "L"):
                 if(instruct.reg3 not in write_buffer):
                     instruct.cycles += [current_cycle]
                     writeback_buffer.append(instruct)
                     write_buffer += [instruct.reg1]
+                    count += 1
                 else:
                     new_list += [instruct] 
-                    count += 1
+                    
             if(instruct.type == "S"):
                 if(instruct.reg1 not in write_buffer and instruct.reg3 not in write_buffer):
                     instruct.cycles += [current_cycle]
                     writeback_buffer.append(instruct)
+                    count += 1
                 else:
                     new_list += [instruct]        
-                    count += 1
+                    """
         else:
             new_list += [instruct]
     issue_buffer = new_list
 
 def writeback():
-    global writeback_buffer, commit_buffer, write_buffer, current_cycle
+    global writeback_buffer, commit_buffer, write_buffer, used_register_buffer, current_cycle
 
     new_list = []
 
@@ -184,7 +225,7 @@ def writeback():
     for instruct in writeback_buffer:
         if(count < issue_width):
             if(instruct.type != "S"):
-                write_buffer.remove(instruct.reg1)
+                write_buffer.append(instruct.write)
             instruct.cycles += [current_cycle]
             commit_buffer.append(instruct)
 
