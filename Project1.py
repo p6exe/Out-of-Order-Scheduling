@@ -1,5 +1,7 @@
 import sys
 
+#rename needs to be in order if no available registers
+#garbage collection for writebuffer and used_reg
 """global variables"""
 num_registers = 0
 issue_width = 0
@@ -8,9 +10,11 @@ current_cycle = 0
 registers = {}
 instructions = []
 
-used_register_buffer = []
+registers_inst = []
 used_register_dict = {}
 write_buffer = [] 
+load_store_stall_buffer = [] #pointer to a S-type and L-type instruction, a queue used for stalling conservative load-store by keeping track of whuich store word came first
+remove_buffer = []
 
 #<FE>,<DE>,<RE>,<DI>,<IS>,<WB>,<CO> buffers
 decode_buffer = []
@@ -33,17 +37,56 @@ class Instruction:
         self.write = reg1
 
 
-def init_numreg_issuewidth():
-    global num_registers, issue_width
+#checks if there is a S-type before a L-type instruct
+#return true if there is a S-type and false otherwise
+def load_store_checker(instruct):
+    global load_store_stall_buffer
+    
+    if(instruct not in load_store_stall_buffer):
+        return False
+    
+    ind = load_store_stall_buffer.index(instruct)
+    while ind >= 0:
+        if load_store_stall_buffer[ind].type == "S":
+            return True
+        ind-=1
+    return False
 
-    line = sys.stdin.readline().strip()
+def remove_buffer_helper():
+    global remove_buffer, registers_inst, used_register_dict
+    dic = {}
+    for key in used_register_dict:
+        dic[used_register_dict[key]] = key
+
+    for instruct in remove_buffer:
+        ind = registers_inst.index(instruct)
+        registers_inst[ind] = 0
+        if ind in dic:
+            used_register_dict.pop(dic[ind])
+
+    remove_buffer = []
+
+def find_next_free_register():
+    global registers_inst
+    for i in range(len(registers_inst)):
+        if registers_inst[i] == 0:
+            return i
+    return -1
+
+def initialize():
+    global num_registers, issue_width, load_store_stall_buffer, registers_inst
+
+    """line = sys.stdin.readline().strip()
     ins = line.split(",")
     num_registers = int(ins[0])
-    issue_width = int(ins[1])
+    issue_width = int(ins[1])"""
 
-    """num_registers = 40
+    load_store_stall_buffer = []
+
+    num_registers = 40
     issue_width = 16
-    print(num_registers, issue_width)"""
+    registers_inst = [0] * (num_registers - 32)
+    print(num_registers, issue_width)
     if(num_registers < 32):
         return False
     else:
@@ -54,13 +97,13 @@ def createinstructions():
     global instructions
     count = 0
     
-    for line in sys.stdin:
+    """for line in sys.stdin:
         ins = line.strip().split(",")
         instruct = Instruction(ins[0], ins[1], ins[2], ins[3])
         instructions += [instruct]
-        count += 1
+        count += 1"""
 
-    """"instruct = Instruction("L",2,80,4)
+    instruct = Instruction("L",2,80,4)
     instructions += [instruct]
     instruct = Instruction("L",3,64,5)
     instructions += [instruct]
@@ -86,8 +129,8 @@ def createinstructions():
     instructions += [instruct]
     instruct = Instruction("S",2,24,29)
     instructions += [instruct]
-    count = 9
-    print(count)"""
+    count = 13
+    print(count)
     return count
 
 
@@ -118,48 +161,61 @@ def decode():
 
 #set the free registers
 def rename():
-    global rename_buffer, dispatch_buffer, num_registers, current_cycle, used_register_buffer, used_register_dict
-    free_registers = num_registers - 32
-    new_list = []
+    global rename_buffer, dispatch_buffer, num_registers, current_cycle, registers_inst, used_register_dict, load_store_stall_buffer, write_buffer
+    remove_list = []
 
     for instruct in rename_buffer:
-        #checks if are available and renames, else stall
-        if(free_registers - len(used_register_buffer) > 0):
+
+        free_reg_index = find_next_free_register()
+        if (instruct.type == "S"): #S-types don't need a free register to perform
+            if(instruct.reg1 in used_register_dict):
+                instruct.reads += [32 + used_register_dict[instruct.reg1]]
+            if(instruct.reg3 in used_register_dict):
+                instruct.reads += [32 + used_register_dict[instruct.reg3]]
+            load_store_stall_buffer += [instruct]
+            instruct.cycles += [current_cycle]
+            dispatch_buffer.append(instruct)
+            remove_list.append(instruct)
+
+        elif(free_reg_index != -1): #evokes only when there are free registers
             
             if(instruct.type == "R"):
                 if(instruct.reg2 in used_register_dict):
                     instruct.reads += [32 + used_register_dict[instruct.reg2]]
                 if(instruct.reg3 in used_register_dict):
                     instruct.reads += [32 + used_register_dict[instruct.reg3]]
-                used_register_buffer.append(instruct)
-                used_register_dict[instruct.reg1] = used_register_buffer.index(instruct)
-                instruct.write = 32 + used_register_buffer.index(instruct)
+                registers_inst[free_reg_index] = instruct
+                used_register_dict[instruct.reg1] = registers_inst.index(instruct)
+                instruct.write = 32 + registers_inst.index(instruct)
+                write_buffer.append(instruct.write)
 
             elif(instruct.type == "I"):
                 if(instruct.reg2 in used_register_dict):
                     instruct.reads += [32 + used_register_dict[instruct.reg2]]
-                used_register_buffer.append(instruct)
-                used_register_dict[instruct.reg1] = used_register_buffer.index(instruct)
-                instruct.write = 32 + used_register_buffer.index(instruct)
+                registers_inst[free_reg_index] = instruct
+                used_register_dict[instruct.reg1] = registers_inst.index(instruct)
+                instruct.write = 32 + registers_inst.index(instruct)
+                write_buffer.append(instruct.write)
 
             elif(instruct.type == "L"):
                 if(instruct.reg3 in used_register_dict):
                     instruct.reads += [32 + used_register_dict[instruct.reg3]]
-                used_register_buffer.append(instruct)
-                used_register_dict[instruct.reg1] = used_register_buffer.index(instruct)
-                instruct.write = 32 + used_register_buffer.index(instruct)
-
-            elif(instruct.type == "S"):
-                if(instruct.reg1 in used_register_dict):
-                    instruct.reads += [32 + used_register_dict[instruct.reg1]]
-                if(instruct.reg3 in used_register_dict):
-                    instruct.reads += [32 + used_register_dict[instruct.reg3]]
+                registers_inst[free_reg_index] = instruct
+                used_register_dict[instruct.reg1] = registers_inst.index(instruct)
+                instruct.write = 32 + registers_inst.index(instruct)
+                write_buffer.append(instruct.write)
+                load_store_stall_buffer += [instruct]
 
             instruct.cycles += [current_cycle]
             dispatch_buffer.append(instruct)
+            remove_list.append(instruct)
         else:
-            new_list += [instruct]
-    rename_buffer = new_list
+            for instruct in remove_list:
+                rename_buffer.remove(instruct)
+            return
+        
+    for instruct in remove_list:
+                rename_buffer.remove(instruct)
     
     
 def dispatch():
@@ -173,62 +229,38 @@ def dispatch():
 
 
 def issue():
-    global issue_buffer, writeback_buffer, write_buffer, current_cycle
+    global issue_buffer, writeback_buffer, write_buffer, current_cycle, load_store_stall_buffer
 
     new_list = []
     
     count = 0
     for instruct in issue_buffer:
-        if (count < issue_width):
 
+        if (count >= issue_width):
+            new_list += [instruct]
+        elif(set(instruct.reads).issubset(set(write_buffer)) and len(instruct.reads)!=0):
+            new_list += [instruct]
+        elif(instruct.type == "L" and load_store_checker(instruct)):    #stall load-store
+            new_list += [instruct]
+        else:
+            instruct.cycles += [current_cycle]
+            writeback_buffer.append(instruct)
+            count += 1
+        """if (count < issue_width):
             #check if all read register dependencies are met
             if(set(instruct.reads).issubset(set(write_buffer))):
-                instruct.cycles += [current_cycle]
-                writeback_buffer.append(instruct)
-                count += 1
+                if(instruct.type != "L" or load_store_stall == None):
+                    instruct.cycles += [current_cycle]
+                    writeback_buffer.append(instruct)
+                    count += 1
             else:
                 new_list += [instruct]
-            """if(instruct.type == "R"):
-                if(instruct.reg2 not in write_buffer and instruct.reg3 not in write_buffer):
-                    instruct.cycles += [current_cycle]
-                    writeback_buffer.append(instruct)
-                    write_buffer += [instruct.reg1]
-                    count += 1
-                else:
-                    new_list += [instruct] 
-                    
-            if(instruct.type == "I"):
-                if(instruct.reg2 not in write_buffer):
-                    instruct.cycles += [current_cycle]
-                    writeback_buffer.append(instruct)
-                    write_buffer += [instruct.reg1]
-                    count += 1
-                else:
-                    new_list += [instruct] 
-                    
-            if(instruct.type == "L"):
-                if(instruct.reg3 not in write_buffer):
-                    instruct.cycles += [current_cycle]
-                    writeback_buffer.append(instruct)
-                    write_buffer += [instruct.reg1]
-                    count += 1
-                else:
-                    new_list += [instruct] 
-                    
-            if(instruct.type == "S"):
-                if(instruct.reg1 not in write_buffer and instruct.reg3 not in write_buffer):
-                    instruct.cycles += [current_cycle]
-                    writeback_buffer.append(instruct)
-                    count += 1
-                else:
-                    new_list += [instruct]        
-                    """
         else:
-            new_list += [instruct]
+            new_list += [instruct]"""
     issue_buffer = new_list
 
 def writeback():
-    global writeback_buffer, commit_buffer, write_buffer, used_register_buffer, current_cycle
+    global writeback_buffer, commit_buffer, write_buffer, registers_inst, current_cycle, load_store_stall_buffer
 
     new_list = []
 
@@ -236,7 +268,9 @@ def writeback():
     for instruct in writeback_buffer:
         if(count < issue_width):
             if(instruct.type != "S"):
-                write_buffer.append(instruct.write)
+                write_buffer.remove(instruct.write)
+            if(instruct.type == "S" or instruct.type == "L"):
+                load_store_stall_buffer.remove(instruct)
             instruct.cycles += [current_cycle]
             commit_buffer.append(instruct)
 
@@ -250,9 +284,8 @@ def writeback():
 #removes from the instruction buffer
 #frees any registers
 def commit(committed_count):
-    global commit_buffer, used_register_buffer, instructions,current_cycle, issue_width
+    global commit_buffer, registers_inst, instructions,current_cycle, remove_buffer, issue_width, write_buffer
 
-    new_list = []
     count = 0
     inorder_flag = True
     while(inorder_flag and committed_count+count < len(instructions)):
@@ -264,18 +297,9 @@ def commit(committed_count):
         else:
             instruct.cycles += [current_cycle]
             if(instruct.type != "S"):
-                used_register_buffer.remove(instruct)
+                remove_buffer.append(instruct)
             commit_buffer.remove(instruct)
             count += 1
-    
-
-    """for instruct in commit_buffer:
-        if(count < issue_width):
-            instruct.cycles += [current_cycle]
-            used_register_buffer.remove(instruct)
-            count += 1
-        else:
-            new_list += [instruct]"""
 
     return committed_count + count
 
@@ -295,7 +319,7 @@ def main():
     committed_count = 0
     
     #Init
-    init_numreg_issuewidth()
+    initialize()
     instruction_count = createinstructions()
 
     #scheduling
@@ -307,6 +331,7 @@ def main():
         rename()
         decode()
         fetch_index = fetch(fetch_index, instruction_count)
+        remove_buffer_helper()
         current_cycle += 1
 
     toString()
