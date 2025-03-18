@@ -9,7 +9,8 @@ registers = {}
 instructions = []
 
 used_register_buffer = []
-write_buffer = [] #{register: instruction}
+used_register_dict = {}
+write_buffer = [] 
 
 #<FE>,<DE>,<RE>,<DI>,<IS>,<WB>,<CO> buffers
 decode_buffer = []
@@ -31,19 +32,18 @@ class Instruction:
         self.reads = []
         self.write = reg1
 
-def get_renamed_register(reg):
-    return
+
 def init_numreg_issuewidth():
     global num_registers, issue_width
 
-    """line = sys.stdin.readline()
+    line = sys.stdin.readline().strip()
     ins = line.split(",")
     num_registers = int(ins[0])
-    issue_width = int(ins[1])"""
+    issue_width = int(ins[1])
 
-    num_registers = 64
-    issue_width = 4
-    print(num_registers, issue_width)
+    """num_registers = 40
+    issue_width = 16
+    print(num_registers, issue_width)"""
     if(num_registers < 32):
         return False
     else:
@@ -54,13 +54,13 @@ def createinstructions():
     global instructions
     count = 0
     
-    """for line in sys.stdin:
-        ins = line.split(",")
+    for line in sys.stdin:
+        ins = line.strip().split(",")
         instruct = Instruction(ins[0], ins[1], ins[2], ins[3])
         instructions += [instruct]
-        count += 1"""
+        count += 1
 
-    instruct = Instruction("L",2,80,4)
+    """"instruct = Instruction("L",2,80,4)
     instructions += [instruct]
     instruct = Instruction("L",3,64,5)
     instructions += [instruct]
@@ -76,10 +76,18 @@ def createinstructions():
     instructions += [instruct]
     instruct = Instruction("L",4,0,6)
     instructions += [instruct]
-    """instruct = Instruction("L",5,0,7)
-    instructions += [instruct]"""
-    count = 8
-    print(count)
+    instruct = Instruction("L",5,0,7)
+    instructions += [instruct]
+    instruct = Instruction("L",2,80,4)
+    instructions += [instruct]
+    instruct = Instruction("L",3,64,5)
+    instructions += [instruct]
+    instruct = Instruction("R",2,2,3)
+    instructions += [instruct]
+    instruct = Instruction("S",2,24,29)
+    instructions += [instruct]
+    count = 9
+    print(count)"""
     return count
 
 
@@ -110,7 +118,7 @@ def decode():
 
 #set the free registers
 def rename():
-    global rename_buffer, dispatch_buffer, num_registers, current_cycle, used_register_buffer
+    global rename_buffer, dispatch_buffer, num_registers, current_cycle, used_register_buffer, used_register_dict
     free_registers = num_registers - 32
     new_list = []
 
@@ -119,30 +127,33 @@ def rename():
         if(free_registers - len(used_register_buffer) > 0):
             
             if(instruct.type == "R"):
-                if(instruct in used_register_buffer):
-                    instruct.reads += [32 + used_register_buffer.index(instruct)]
-                if(instruct in used_register_buffer):
-                    instruct.reads += [32 + used_register_buffer.index(instruct)]
+                if(instruct.reg2 in used_register_dict):
+                    instruct.reads += [32 + used_register_dict[instruct.reg2]]
+                if(instruct.reg3 in used_register_dict):
+                    instruct.reads += [32 + used_register_dict[instruct.reg3]]
                 used_register_buffer.append(instruct)
+                used_register_dict[instruct.reg1] = used_register_buffer.index(instruct)
                 instruct.write = 32 + used_register_buffer.index(instruct)
 
             elif(instruct.type == "I"):
-                if(instruct in used_register_buffer):
-                    instruct.reads += [32 + used_register_buffer.index(instruct)]
+                if(instruct.reg2 in used_register_dict):
+                    instruct.reads += [32 + used_register_dict[instruct.reg2]]
                 used_register_buffer.append(instruct)
+                used_register_dict[instruct.reg1] = used_register_buffer.index(instruct)
                 instruct.write = 32 + used_register_buffer.index(instruct)
 
             elif(instruct.type == "L"):
-                if(instruct in used_register_buffer):
-                    instruct.reads += [32 + used_register_buffer.index(instruct)]
+                if(instruct.reg3 in used_register_dict):
+                    instruct.reads += [32 + used_register_dict[instruct.reg3]]
                 used_register_buffer.append(instruct)
+                used_register_dict[instruct.reg1] = used_register_buffer.index(instruct)
                 instruct.write = 32 + used_register_buffer.index(instruct)
 
             elif(instruct.type == "S"):
-                if(instruct in used_register_buffer):
-                    instruct.reads += [32 + used_register_buffer.index(instruct)]
-                if(instruct in used_register_buffer):
-                    instruct.reads += [32 + used_register_buffer.index(instruct)]
+                if(instruct.reg1 in used_register_dict):
+                    instruct.reads += [32 + used_register_dict[instruct.reg1]]
+                if(instruct.reg3 in used_register_dict):
+                    instruct.reads += [32 + used_register_dict[instruct.reg3]]
 
             instruct.cycles += [current_cycle]
             dispatch_buffer.append(instruct)
@@ -252,7 +263,8 @@ def commit(committed_count):
             inorder_flag = False
         else:
             instruct.cycles += [current_cycle]
-            used_register_buffer.remove(instruct)
+            if(instruct.type != "S"):
+                used_register_buffer.remove(instruct)
             commit_buffer.remove(instruct)
             count += 1
     
@@ -273,7 +285,7 @@ def toString():
     global instructions
 
     for instruct in instructions:
-        print(instruct.cycles)
+        print(str(instruct.cycles[0])+","+str(instruct.cycles[1])+","+str(instruct.cycles[2])+","+str(instruct.cycles[3])+","+str(instruct.cycles[4])+","+str(instruct.cycles[5])+","+str(instruct.cycles[6]))
 
 
 def main():
