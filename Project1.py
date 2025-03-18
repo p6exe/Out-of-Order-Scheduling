@@ -67,8 +67,16 @@ def createinstructions():
     instructions += [instruct]
     instruct = Instruction("I",1,0,8)
     instructions += [instruct]
-    count = 5
-
+    instruct = Instruction("R",6,6,1)
+    instructions += [instruct]
+    instruct = Instruction("R",7,7,1)
+    instructions += [instruct]
+    instruct = Instruction("L",4,0,6)
+    instructions += [instruct]
+    """instruct = Instruction("L",5,0,7)
+    instructions += [instruct]"""
+    count = 8
+    print(count)
     return count
 
 
@@ -195,14 +203,17 @@ def commit(committed_count):
     new_list = []
     count = 0
     inorder_flag = True
-    while(inorder_flag):
-        if(count < issue_width):
-            if(instructions[commited_count+count]==commit_buffer[0]):
-                instruct.cycles += [current_cycle]
-                used_register_buffer.remove(instruct)
-                commit_buffer.remove(instructions[committed_count+count])
-                count += 1
-        inorder_flag = False
+    while(inorder_flag and committed_count+count < len(instructions)):
+        instruct = instructions[committed_count+count]
+        if(count == issue_width or len(commit_buffer) == 0):
+            inorder_flag = False
+        elif(instruct not in commit_buffer):
+            inorder_flag = False
+        else:
+            instruct.cycles += [current_cycle]
+            used_register_buffer.remove(instruct)
+            commit_buffer.remove(instruct)
+            count += 1
     
 
     """for instruct in commit_buffer:
